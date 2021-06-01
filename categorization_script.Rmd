@@ -1,0 +1,122 @@
+---
+title: "R for repruducible science"
+author: "EvB"
+date: "4/6/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+set.seed(123)   # Makes it reproduceable even if random number generators are used
+
+```
+
+## Background
+
+```{r setup}
+#load packages & data
+library(rethinking)
+library(rstan)
+library(tidyverse)
+library(brms)
+source("src/functions.r")
+```
+
+<br>
+<br>
+## 1. Data processing
+
+#### 1. 1 Remove extra participants
+First, because of an error when sending the study out, a whole bunch of participants did the experiment twice. The following section makes frequent use of the recode() command. The datafile contains numerical data coded as strings. While I was at it, I also calculated 
+
+```{r recoding, echo=FALSE}
+d <- d <- read.csv("https://raw.githubusercontent.com/vanbrrlekom/Categorization/main/data/categorization1_data.csv", na.strings = "")%>% 
+  mutate(dupe = duplicated(IPAddress)) %>% #Checks if IP adress has occurred previously
+  filter(dupe == FALSE) %>%  # removes duplicated IP adresses
+  mutate( across(starts_with("ess"),  # changes responses to numerical
+                  ~recode(.,"Stämmer inte alls\n1" ="1",
+                          "Stämmer helt\n7" = "7") %>% as.integer()),
+          across(starts_with("hen_attitudes"),
+                 ~recode(.,"Mycket bra\n7" ="1",
+                          "Mycket dåligt\n1" = "7") %>% as.integer()),
+          across(starts_with("GIS"),  # changes responses to numerical
+                  ~recode(.,"Stämmer inte alls\n1" ="1",
+                          "Stämmer helt\n7" = "7") %>% as.integer()), id = row_number(),
+          hen_use = 
+           recode(hen_use,
+                  "Aldrig" = 1,
+                  "Någon gång om året" = 2,
+                  "Någon gång i månaden" = 3,
+                  "Någon gång per vecka" = 4,
+                  "Dagligen" = 5) %>% as.integer(),
+         hen_hear = 
+           recode(hen_hear,
+                  "Aldrig" = 1,
+                  "Någon gång om året" = 2,
+                  "Någon gång i månaden" = 3,
+                  "Någon gång per vecka" = 4,
+                  "Dagligen" = 5) %>%  as.integer()) %>% 
+  rename(id_feminist = essentialism_7 ,id_lgbtq = essentialism_8)
+  
+```
+
+#### 1.2 Check to make sure all participants completed the experiment
+
+The aim of the experiment was to investigate the effect of pronoun use on gender categorization of faces. First, then, participants completed a task where they used a pronoun three times. The following code checks whether participants used the correct pronoun three times. If they didn't they are assigned a NA value
+
+```{r}
+d <- manipulation_check(d)
+```
+
+
+#### 1.3 Clean up variables
+
+We also collected survey data on some personal attitudes. Gender essentialism (essentialism), Gender identity strength and attitudes to the word hen. These were multi-item questionnaires. The following chunk calculates the mean scores for each scale and standardizes them
+
+```{r essentialism & other variables}
+# takes a variable & standardized is
+
+d <- d %>% 
+  mutate(essentialism_s = rowMeans(select(d, starts_with("essentialism"))) %>% standardize(),
+         GIS_s= rowMeans(select(d, starts_with("GIS"))) %>% standardize(),
+         hen_attitudes_s= rowMeans(select(d, starts_with("hen_attitudes"))) %>% standardize())
+         
+```
+
+
+#### 1.4 reshaping
+
+The following chunk selects the relevant columns, the standardized scores, and the responses and melts it all into a long-format data-frame.
+
+```{r}
+#Select only the relevant columns
+d <- d %>% 
+  select(essentialism_s, GIS_s, hen_attitudes_s, hen_use, hen_hear, id_feminist, id_lgbtq,
+         starts_with("X"), id, condition) %>% 
+  pivot_longer(cols = contains("X"), names_to = "face", values_to = "categorization")%>% 
+  mutate(resp = recode(categorization, 
+                       "Icke-binär" = "NB",
+                       "Man" = "B", 
+                       "Kvinna" = "B",
+                       "Vet ej" = "NB"))
+```
+
+## 2 Analysis
+Model specification. 
+```{r}
+
+prior1 <- c(
+  prior(normal(0, 1.5), class = Intercept),
+  prior(normal(0, 0.5), class = b), 
+  prior(cauchy(0, 3), class = sd)
+)
+
+cat_multilevel_m1 <- brm(
+  resp ~ essentialism_s * condition + (1|id) + (1|face), 
+  family = bernoulli("logit"),
+  prior = prior1,
+  data = d, 
+  warmup = 2000, iter = 5000, file = "models/cat_multilevel_m1"
+)
+```
+

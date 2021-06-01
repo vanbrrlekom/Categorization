@@ -1,10 +1,10 @@
+#Manipulation check is designed for categorizations1_data.csv. It makes sure that every participant
+#used the correct pronoun three times. 
+
 manipulation_check <- function(d){
   #manipulation check
   conditions <- c("hen1", "hen2", "hen3", "han1", "han2", "han3", "hon1", "hon2", "hon3", "control1", "control2", "control3")
-  
-  #Manipulation check make sure participants actually used the pronoun in all
-  #three sentences. I will admit, this is all pretty hackish. 
-  
+
   #First, create a column called condition in d with the first three letters in each of
   #the three sentences
   d_conditions <- apply( d[,conditions], 2 , substr, start = 1, stop = 3 ) 
@@ -14,7 +14,7 @@ manipulation_check <- function(d){
     tolower()
   
   #then check if they used the same pronoun in the all three sentencs AND if they weren't
-  #in the control condition
+  #in the control condition. This involves creating a function within the function, doublecheck.
   d$completed <- d$condition_tmp == "henhenhen"|d$condition_tmp == "hanhanhan"| d$condition_tmp == "honhonhon"
   doublecheck <- function(x){
     ifelse(d$completed == FALSE, grepl(x, d$condition_tmp), F) 
@@ -27,4 +27,12 @@ manipulation_check <- function(d){
   for (i in c("hen", "na", "han", "hon")){
     d$condition <- ifelse(d$completed == F & grepl(i, d$condition_tmp) == T, NA, d$condition ) 
   }
+  return(d)
 }
+
+#standardize a variable
+standardize <- function(x){
+  (x - mean(x, na.rm = TRUE))/sd(x, na.rm = TRUE)
+}
+
+
